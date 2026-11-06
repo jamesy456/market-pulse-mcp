@@ -7,7 +7,7 @@ Run: .venv/bin/python scripts/cases.py mine     (Market Pulse and web, side by s
      .venv/bin/python scripts/cases.py mcp_c    (a third, on the bulk file; no key, Claude can run it)
      .venv/bin/python scripts/cases.py metrics  (rebuild metrics.md from the saved runs)
 Writes active/testing/cases/<agent>-c<n>-r<round>.json and metrics.md. Design and scoring: active/testing/CASES.md;
-truth: scripts/truth_cases.py. 2 rounds per agent.
+truth: scripts/truth_cases.py. 3 rounds per agent.
 """
 import json
 import sys
@@ -19,7 +19,7 @@ from benchmark import AGENTS as FIRST, ROOT, run
 from benchmark_c import AGENTS as PHASE_C, LOOKUP, audited, key
 
 OUT = ROOT / "active/testing/cases"
-ROUNDS = (1, 2)
+ROUNDS = (1, 2, 3)
 TODAY = " Today is 1 November 2026. Give the numbers and say how confident you are in them."
 CASES = {
     "c1": "Are new cafés, coffee shops and takeaway businesses being set up faster in Cardiff than in the rest of Great "
@@ -64,7 +64,7 @@ def one(agent: str, c: str, r: int) -> dict:
         return res
     res = run(agent, r, CASES[c] + TODAY, AGENTS, OUT, f"{agent}-{c}", redact=key() if agent == "mcp_b" else "")
     if agent in ("mcp_b", "mcp_c"):  # audit: no reading the wrapper, the key file or the rival's database directly
-        calls = json.dumps(res["tool_calls"])
+        calls = json.dumps(res["tool_calls"]).replace("os.environ", "")  # Python's name, not a read of the .env file
         res["touched_wrapper"] = str(RIVALS) in calls or ".env" in calls or "companies.db" in calls
         (OUT / f"{agent}-{c}-r{r}.json").write_text(json.dumps(res, indent=2))
     return res

@@ -4,11 +4,13 @@ Run: .venv/bin/python scripts/benchmark.py [first] [last]   (default rounds 1-3;
 Writes active/benchmark/<agent>-r<n>.json (answer, metrics, every tool call) and active/benchmark/metrics.md.
 Correctness and caveats are scored by reading each answer against the raw grid (see DECISIONS.md).
 
-The raw-data agent works in a fresh folder outside this repo per run, holding hard links to the two public files
-(snapshot CSV, ONS postcode lookup) and a Python with DuckDB, so earlier runs and this repo can't help it.
+Each agent works in a fresh folder outside /Users per run, holding hard links to read-only copies of the public files
+it needs, so earlier runs and this repo can't help it. Any agent with a shell runs in the sandbox below, proved by
+scripts/sandbox_check.py. The raw-data agent's Python sits under /Users, so that first benchmark can't be rerun.
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -18,6 +20,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "active/benchmark"
 BENCH = ROOT.parent / "market-pulse-bench"  # next to the repo, outside it on purpose
+WORK = Path("/private/tmp/market-pulse-bench")  # outside /Users, which the sandbox hides
+# CF-1, AUDIT-FINDINGS.md: register text could steer an agent with a shell, so Bash can't read /Users or reach the
+# network. The sandbox covers only Bash; the permission rules stop Read, Edit and Write touching /Users.
+ENV_KEPT = ("PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "TERM")  # a short list, so nothing secret comes along
 MODEL = "claude-sonnet-5-5"
 FILES = [ROOT / "data/snapshots/BasicCompanyDataAsOneFile-2026-11-01.csv",
          ROOT / "data/lookup/PCD_OA21_LSOA21_MSOA21_LAD_AUG26_UK_LU.csv"]
@@ -40,12 +46,34 @@ AGENTS = {
 }
 
 
+def sandbox(cwd: Path) -> str:
+    """Hides /Users and macOS temp files, except this run's own Claude folder, where long tool results are saved for
+    the agent to read. /tmp/claude-<uid> stays visible: Bash writes its working folder there. Deny beats allow for
+    Read, so the rules name each neighbour of that folder rather than /Users as a whole."""
+    own = Path.home() / ".claude/projects" / re.sub(r"[^a-zA-Z0-9]", "-", str(cwd))
+    hidden = [Path("/private/var/folders")]
+    for parent, keep in ((Path("/Users"), Path.home()), (Path.home(), own.parents[1]), (own.parents[1], own.parent),
+                         (own.parent, own)):
+        hidden += [p for p in parent.iterdir() if p != keep]
+    return json.dumps({
+        "sandbox": {"enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False,
+                    "filesystem": {"denyRead": ["/Users", "/private/var/folders"], "allowRead": [str(own)]},
+                    "network": {"allowedDomains": [], "strictAllowlist": True}},
+        "permissions": {"deny": [f"{tool}(/{p}{end})" for p in hidden for tool in ("Read", "Edit", "Write")
+                                 for end in ("", "/**")]}})
+
+
 def workdir(name: str, r: int, files=()) -> Path:
-    d = BENCH / f"{name}-r{r}"
+    d = WORK / f"{name}-r{r}"
     shutil.rmtree(d, ignore_errors=True)
     d.mkdir(parents=True)
     for f in files:
-        os.link(f, d / f.name)  # hard link: no copy, no path back to the repo
+        shared = WORK / "files" / f.name
+        if not shared.exists():
+            shared.parent.mkdir(exist_ok=True)
+            shutil.copy(f, shared)
+            shared.chmod(0o444)
+        os.link(shared, d / f.name)  # hard link to a read-only copy: no path back to the repo
     return d
 
 
@@ -53,19 +81,18 @@ def run(agent: str, r: int, question: str = QUESTION, agents: dict = AGENTS, out
         redact: str = "") -> dict:
     """Phase C reuses this with its own questions and agents; the defaults are the first benchmark, unchanged.
     `redact` (a secret) is cut from the raw output before anything is parsed or written."""
-    # Accepted risk, AUDIT-FINDINGS.md: register text could steer an agent with a shell to read .env or raw data.
-    if "Bash" in agents[agent]["tools"]:
-        raise SystemExit(f"Refused: agent {agent!r} would have shell access while reading register text")
     a, cwd = agents[agent], workdir(name or agent, r, agents[agent].get("files", ()))
     cmd = ["claude", "-p", question + a["extra"], "--model", MODEL, "--output-format", "stream-json", "--verbose",
            "--tools", a["tools"], "--setting-sources", "", "--no-session-persistence", "--max-budget-usd", a["budget"],
            "--strict-mcp-config"]
+    if "Bash" in a["tools"]:
+        cmd += ["--settings", sandbox(cwd)]
     if a.get("mcp"):
         cmd += ["--mcp-config", a["mcp"], "--allowedTools", ",".join(t for t in (a["allow"], a["tools"]) if t)]
     else:
         cmd += ["--allowedTools", a["tools"]]
     try:
-        env = {k: v for k, v in os.environ.items() if k != "COMPANIES_HOUSE_API_KEY"}  # agents never inherit the key
+        env = {k: v for k, v in os.environ.items() if k in ENV_KEPT}
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=1800, cwd=cwd, stdin=subprocess.DEVNULL,
                               env=env)
         stdout, stderr = proc.stdout, proc.stderr

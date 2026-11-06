@@ -2,7 +2,7 @@
 
 Run: .venv/bin/python scripts/testing_results.py   -> active/testing/numbers.md
 Reads: pytest, active/testing/sweep.md, active/testing/check-standouts.md (header line only: it holds exact counts),
-active/testing/cases/metrics.md, the two case-scoring reviews, active/e2e/results.md (and its committed history),
+active/testing/cases/metrics.md, the blind case scores, active/e2e/results.md (and its committed history),
 active/testing/breakit/results.md and the break-it judge's review.
 """
 import re
@@ -38,21 +38,7 @@ def medians() -> list[str]:
 
 
 def scores() -> list[str]:
-    rows = []
-    for f, who in (("codex-cases-score.md", "first scorer"), ("codex-cases-score-2.md", "second scorer")):
-        for l in (R / f).read_text().splitlines():
-            m = re.match(r"\| ([a-z_]+) \|(.*)\| (\d+) \| ([\d.]+) \|$", l)
-            if m:
-                rows.append(f"| {m[1]} | {m[3]} | {m[4]} | {who} |")
-    agree = re.search(r"\*\*(\d+ of \d+) line scores agree", (R / "codex-cases-score-2.md").read_text())[1]
-    s3 = (R / "codex-cases-score-3.md").read_text()
-    total3 = re.search(r"\| \*\*Total\*\* \| \*\*(\d+)/\d+\*\* \| \*\*(\d+)/\d+\*\* \| \*\*(\d+/\d+)\*\* \|", s3)
-    return ["| Agent | Core points | Mean per run | Scored by |", "|---|---|---|---|", *rows, "",
-            f"Scorer agreement on 8 runs both scored: {agree} line scores.",
-            f"Market Pulse on the current server (third scorer, codex-cases-score-3.md): {total3[3]} core points "
-            f"(round 1 {total3[1]}, round 2 {total3[2]}), {re.search(r'Mean: [*][*]([\d.]+) core points per run', s3)[1]} "
-            f"a run; agreement with the second scorer on 4 earlier runs: "
-            f"{re.search(r'[*][*](\d+ of \d+) applicable line scores agree', s3)[1]}."]
+    return (R / "cases-blind-results.md").read_text().strip().splitlines()[2:]
 
 
 def e2e() -> list[str]:
@@ -74,13 +60,13 @@ def breakit() -> list[str]:
     bad = sum("False" in a.replace("'used_tools': False", "") for a in auto)
     j = (R / "codex-breakit-judge.md").read_text()
     verdicts = {v: len(re.findall(rf"\| {v} \|", j)) for v in ("PASS", "PARTIAL", "FAIL")}
-    j2 = (R / "codex-breakit-judge-2.md").read_text().split("## Recommended", 1)[0]
+    j2 = (R / "codex-breakit-judge-3.md").read_text().split("## Recommended", 1)[0]
     now = {v: len(re.findall(rf"\| B\d+ R\d \| {v} \|", j2)) for v in ("PASS", "PARTIAL", "FAIL")}
     return [f"Latest runs: {len(auto)}; runs failing an automatic check other than used_tools: {bad}; "
             f"runs that used no tool: {sum(chr(39) + 'used_tools' + chr(39) + ': False' in a for a in auto)}.",
             f"Codex judge, first runs (before the break-it fixes): {verdicts}.",
-            f"Codex judge, current server (codex-breakit-judge-2.md): {now}; "
-            f"{re.search(r'[*][*](HOLDS WITH FIXES|HOLDS|BREAKS)[.]?[*][*]', (R / 'codex-breakit-judge-2.md').read_text())[1]}."]
+            f"Codex judge, final server (codex-breakit-judge-3.md): {now}; "
+            f"{re.search(r'[*][*](HOLDS WITH FIXES|HOLDS|BREAKS)[.]?[*][*]', (R / 'codex-breakit-judge-3.md').read_text())[1]}."]
 
 
 def missed_standout() -> str:

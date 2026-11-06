@@ -1105,11 +1105,36 @@ def test_build_refuses_any_other_snapshot_file(tmp_path):
         exec(start.replace(found, f"SNAPSHOT = Path({str(other)!r})"), {"__file__": str(build)})
 
 
-def test_agents_with_a_shell_are_refused():
+def test_agents_with_a_shell_get_the_sandbox(monkeypatch, tmp_path):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
     import benchmark
-    with pytest.raises(SystemExit, match="shell access"):
-        benchmark.run("raw", 1)
+
+    class Stop(Exception):
+        pass
+
+    seen = []
+
+    def launch(cmd, **kw):
+        seen.append((cmd, kw["env"]))
+        raise Stop
+
+    monkeypatch.setattr(benchmark, "WORK", tmp_path)
+    monkeypatch.setattr(benchmark.subprocess, "run", launch)
+    monkeypatch.setenv("SOME_API_KEY", "x")
+    agents = {"shell": {"budget": "1", "tools": "Bash,Read,Write", "extra": ""},
+              "plain": {"budget": "1", "tools": "WebSearch", "extra": ""}}
+    for agent in agents:
+        with pytest.raises(Stop):
+            benchmark.run(agent, 1, "q", agents, tmp_path)
+    (shell, env), (plain, _) = seen
+    box = json.loads(shell[shell.index("--settings") + 1])
+    assert box["sandbox"]["enabled"] and box["sandbox"]["failIfUnavailable"]
+    assert box["sandbox"]["allowUnsandboxedCommands"] is False
+    assert "/Users" in box["sandbox"]["filesystem"]["denyRead"] and box["sandbox"]["network"]["allowedDomains"] == []
+    assert f"Read(/{Path.home()}/Claude/**)" in box["permissions"]["deny"]
+    own = box["sandbox"]["filesystem"]["allowRead"]
+    assert len(own) == 1 and "/.claude/projects/" in own[0] and not any(own[0] in d for d in box["permissions"]["deny"])
+    assert "--settings" not in plain and set(env) <= set(benchmark.ENV_KEPT)
 
 
 def test_batch_b_parts_note():

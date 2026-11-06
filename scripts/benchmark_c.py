@@ -55,7 +55,8 @@ def audited(agent: str, q: str, r: int, tag: str = "") -> dict:
     name = f"{agent}{tag}-{q}"
     res = run(agent, r, QUESTIONS[q], AGENTS, OUT, name, redact=key())  # redacted before it is written
     leaked = res["key_leaked"]
-    res["touched_wrapper"] = str(CH_DIR) in json.dumps(res["tool_calls"]) or ".env" in json.dumps(res["tool_calls"])
+    calls = json.dumps(res["tool_calls"]).replace("os.environ", "")  # Python's name, not a read of the .env file
+    res["touched_wrapper"] = str(CH_DIR) in calls or ".env" in calls
     res["ch_calls"] = sum(c["tool"].startswith("mcp__companies-house") for c in res["tool_calls"])
     if leaked or res["touched_wrapper"]:
         print(f"AUDIT {name} r{r}: key_leaked={leaked} touched_wrapper={res['touched_wrapper']}", flush=True)
