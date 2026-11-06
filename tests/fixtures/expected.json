@@ -1,0 +1,18 @@
+{
+  "total_rows": 200,
+  "q3_2026_all_rows": 130,
+  "q3_2026_private_limited": 83,
+  "q3_2026_companies_excl_charities": 103,
+  "q3_2026_companies_incl_charities": 112,
+  "q3_2026_llp": 8,
+  "q3_2026_excluded_types": 10,
+  "q3_2026_sic_81210": 45,
+  "q3_2026_no_activity_stated_companies": 15,
+  "q2_2026_private_limited": 25,
+  "q4_2026_private_limited": 10,
+  "q1_2021_private_limited": 20,
+  "edge_30_06_2026_is_q2": true,
+  "edge_01_07_2026_is_q3": true,
+  "edge_30_09_2026_is_q3": true,
+  "edge_01_10_2026_is_q4": true
+}

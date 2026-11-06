@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+data/
+active/.tmp/
+*.log
+*.duckdb
+.pytest_cache/
+active/benchmark-c/truth.md
+active/testing/truth-cases.md
+active/testing/check-cases.md
+active/testing/check-standouts.md
+# rival MCP answers can hold raw company records and exact small counts
+active/testing/cases/
